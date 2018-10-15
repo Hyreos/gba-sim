@@ -3,6 +3,10 @@ name = "gba-sim"
 version = "0.1.0"
 authors = ["hyreos <hyreoss@gmail.com>", "modog"]
 
+
 [dependencies.gtk]
 git = "https://github.com/gtk-rs/gtk"
 features = ["v3_10"]
+
+[dependencies]
+num = "*"

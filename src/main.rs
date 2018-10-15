@@ -1,3 +1,6 @@
+mod cpu;
+
 fn main() {
-    println!("Hello, world!");
+    let mut mmu : cpu::Mmu;
+    let cpu : cpu::Cpu;
 }
