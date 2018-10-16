@@ -3,6 +3,7 @@ extern crate std;
 
 use cpu::num::traits::PrimInt as PrimInt;
 
+#[allow(dead_code)]
 pub struct RegFile {
     a: i8,
     f: i8,
@@ -16,6 +17,7 @@ pub struct RegFile {
     sp : u16
 }
 
+#[allow(dead_code)]
 impl RegFile<> {
     pub fn read_a(&self) -> i8 { return self.a; }
 
@@ -161,6 +163,7 @@ pub struct Cpu {
     flags : u8
 }
 
+#[allow(dead_code)]
 impl Cpu<> {
     // pub fn new(mut mmu: Mmu) -> Self {
     //    let mut myself = Cpu{ mmu: mmu };
@@ -168,21 +171,30 @@ impl Cpu<> {
     // }
 
     pub fn set_flag(&mut self, flags: CpuFlags) {
-        match flags {
-            CpuFlags::C => { self.flags |= 0x10u8; }
-            CpuFlags::H => { self.flags |= 0x20u8; }
-            CpuFlags::N => { self.flags |= 0x40u8; }
-            CpuFlags::Z => { self.flags |= 0x80u8; }
-        }
+        self.flags |= match flags {
+            CpuFlags::C => 0x10,
+            CpuFlags::H => 0x20,
+            CpuFlags::N => 0x40,
+            CpuFlags::Z => 0x80,
+        };
     }
 
     pub fn clear_flag(&mut self, flags: CpuFlags) {
-         match flags {
-            CpuFlags::C => { self.flags &= 0x10u8; }
-            CpuFlags::H => { self.flags &= 0x20u8; }
-            CpuFlags::N => { self.flags &= 0x40u8; }
-            CpuFlags::Z => { self.flags &= 0x80u8; }
-        }
+         self.flags &= match flags {
+            CpuFlags::C => 0x10,
+            CpuFlags::H => 0x20,
+            CpuFlags::N => 0x40,
+            CpuFlags::Z => 0x80,
+        };
+    }
+
+    pub fn get_flag(&self, flags: CpuFlags) -> i8 {
+        (match flags {
+            CpuFlags::C => self.flags & 0x10,
+            CpuFlags::H => self.flags & 0x20,
+            CpuFlags::N => self.flags & 0x40,
+            CpuFlags::Z => self.flags & 0x80,
+        }) as i8
     }
 
     pub fn opexec(&mut self, op_code: u8) {
@@ -356,47 +368,129 @@ impl Cpu<> {
 
             }
             0x11 => {
-
+                let data = self.mmu.read_byte((self.registers.read_pc() + 1) as i16);
+                self.registers.write_c(data);
             }
             0x12 => {
-
+                let address = self.mmu.read_byte((self.registers.read_pc()) as i16) as i16;
+                self.mmu.write_byte(address, self.registers.read_a());
             }
             0x13 => {
-                
+                let de = self.registers.read_de();
+                self.registers.write_de(de + 1);
             }
             0x14 => {
+                let d = self.registers.read_d();
+                
+                if !check_half_carry(d, 1) {
+                    self.set_flag(CpuFlags::H);
+                }
 
+                if d + 1 == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_d(d + 1);
             }
             0x15 => {
+                let d = self.registers.read_d();
 
+                if !check_half_carry(d, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                if (d + 1 == 0) {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.registers.write_d(d - 1);
             }
             0x16 => {
-
+                let pcval = self.registers.read_pc() as i16;
+                let data = self.mmu.read_byte(pcval + 1);
+                self.registers.write_d(data);
             }
+            // RLA
             0x17 => {
 
             }
+            // JR r8
             0x18 => {
-                
+                let mut pcval = self.registers.read_pc() as i16;
+                pcval += self.mmu.read_byte(pcval + 1) as i16;
+                self.registers.write_pc(pcval as u16);
             }
+            // ADD HL, DE
             0x19 => {
+                let hl = self.registers.read_hl();
+                let de = self.registers.read_de();
 
+                self.clear_flag(CpuFlags::N);
+
+                if !check_carry(hl, de) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(hl, de) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.registers.write_hl(hl + de);
             }
+            // LD A, (DE)
             0x1A => {
-
+                let de = self.registers.read_de();
+                let memdata = self.mmu.read_byte(de);
+                self.registers.write_a(memdata);
             }
+            // DEC DE
             0x1B => {
-
+                let de = self.registers.read_de();
+                self.registers.write_de(de - 1);
             }
+            // INC E
             0x1C => {
-                
+                let e = self.registers.read_e();
+
+                if !check_half_carry(e, 1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                if e + 1 == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_e(e + 1);
             }
+            // DEC E
             0x1D => {
+                let e = self.registers.read_e();
 
+                if !check_half_carry(e, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                if e - 1 == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.registers.write_e(e - 1);
             }
+            // LD E, d8
             0x1E => {
-
+                let pcval = self.registers.read_pc() as i16;
+                let memdata = self.mmu.read_byte(pcval + 1);
+                self.registers.write_e(memdata);
             }
+            // RRA
             0x1F => {
 
             }
@@ -684,172 +778,1062 @@ impl Cpu<> {
             0x7F => {
 
             }
-            0x80 => {}
+            // ADD A, B
+            0x80 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_b();
+
+                if !check_carry(a, b) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, b) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_a(b + a);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+            }
+            // ADD A, C
             0x81 => {
+                let a = self.registers.read_a();
+                let c = self.registers.read_c();
 
+                if !check_carry(a, c) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, c) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_a(c + a);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADD A, D
             0x82 => {
+                let a = self.registers.read_a();
+                let d = self.registers.read_d();
 
+                if !check_carry(a, d) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, d) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_a(d + a);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADD A, E
             0x83 => {
-                
+                let a = self.registers.read_a();
+                let e = self.registers.read_e();
+
+                if !check_carry(a, e) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, e) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_a(e + a);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADD A, H
             0x84 => {
+                let a = self.registers.read_a();
+                let h = self.registers.read_h();
 
+                if !check_carry(a, h) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, h) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_a(h + a);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADD A, L
             0x85 => {
+                let a = self.registers.read_a();
+                let l = self.registers.read_l();
 
+                if !check_carry(a, l) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, l) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_a(l + a);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADD A, (HL)
             0x86 => {
+                let f = self.registers.read_a();
 
+                let address = self.registers.read_hl();
+                let s = self.mmu.read_byte(address);
+
+                if !check_carry(f, s) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(f, s) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_a(f + s);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADD A, A
             0x87 => {
+                let a = self.registers.read_a();
+                let a2 = self.registers.read_a();
 
+                if !check_carry(a, a2) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, a2) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                self.registers.write_a(a2 + a);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADC A, B
             0x88 => {
-                
+                let a = self.registers.read_a();
+                let b = self.registers.read_b();
+
+                if !check_carry(a, b) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, b) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                let c = (self.get_flag(CpuFlags::C) != 0) as i8;                
+                self.registers.write_a(a + b + c);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADC A, C
             0x89 => {
+                let a = self.registers.read_a();
+                let c = self.registers.read_c();
 
+                if !check_carry(a, c) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, c) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                let carry = (self.get_flag(CpuFlags::C) != 0) as i8;
+                self.registers.write_a(a + c + carry);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADC A, D
             0x8A => {
+                let a = self.registers.read_a();
+                let d = self.registers.read_d();
 
+                if !check_carry(a, d) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, d) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                let c = (self.get_flag(CpuFlags::C) != 0) as i8;
+                self.registers.write_a(a + d + c);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADC A, E
             0x8B => {
+                let a = self.registers.read_a();
+                let e = self.registers.read_e();
 
+                if !check_carry(a, e) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, e) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                let c = (self.get_flag(CpuFlags::C) != 0) as i8;
+                self.registers.write_a(a + e + c);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADC A, H
             0x8C => {
-                
+                let a = self.registers.read_a();
+                let h = self.registers.read_h();
+
+                if !check_carry(a, h) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, h) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                let c = (self.get_flag(CpuFlags::C) != 0) as i8;
+                self.registers.write_a(a + h + c);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADC A, L
             0x8D => {
+                let a = self.registers.read_a();
+                let l = self.registers.read_l();
 
+                if !check_carry(a, l) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, l) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                let c = (self.get_flag(CpuFlags::C) != 0) as i8;
+                self.registers.write_a(a + l + c);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADC A, (HL)
             0x8E => {
+                let f = self.registers.read_a();
 
+                let address = self.registers.read_hl();
+                let s = self.mmu.read_byte(address);
+
+                if !check_carry(f, s) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(f, s) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                let c = (self.get_flag(CpuFlags::C) != 0) as i8;
+                self.registers.write_a(f + s + c);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // ADC A, A
             0x8F => {
+                let a = self.registers.read_a();
+                let a2 = self.registers.read_a();
 
+                if !check_carry(a, a2) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, a2) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.clear_flag(CpuFlags::N);
+
+                let c = (self.get_flag(CpuFlags::C) != 0) as i8;
+                self.registers.write_a(a + a2 + c);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SUB B
             0x90 => {
+                let b = self.registers.read_b();
 
+                if !check_carry(b, -1) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(b, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.registers.write_b(b - 1);
+
+                if self.registers.read_b() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SUB C
             0x91 => {
+                let c = self.registers.read_c();
 
+                if !check_carry(c, -1) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(c, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.registers.write_c(c - 1);
+
+                if self.registers.read_c() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SUB D
             0x92 => {
+                let d = self.registers.read_d();
 
+                if !check_carry(d, -1) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(d, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.registers.write_d(d - 1);
+
+                if self.registers.read_d() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SUB E
             0x93 => {
-                
+                let e = self.registers.read_e();
+
+                if !check_carry(e, -1) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(e, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.registers.write_e(e - 1);
+
+                if self.registers.read_e() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SUB H
             0x94 => {
+                let h = self.registers.read_h();
 
+                if !check_carry(h, -1) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(h, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.registers.write_h(h - 1);
+
+                if self.registers.read_h() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SUB L
             0x95 => {
+                let l = self.registers.read_l();
 
+                if !check_carry(l, -1) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(l, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.registers.write_l(l - 1);
+
+                if self.registers.read_l() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SUB (HL)
             0x96 => {
+                let address = self.registers.read_hl();
+                let l = self.mmu.read_word(address);
 
+                if !check_carry(l, -1) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(l, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.mmu.write_word(address, l - 1);
+
+                if l - 1 == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SUB A
             0x97 => {
+                let a = self.registers.read_a();
 
+                if !check_carry(a, -1) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, -1) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                self.registers.write_a(a - 1);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SBC A, B
             0x98 => {
-                
+                let a = self.registers.read_a();
+                let b = self.registers.read_b();
+
+                if !check_carry(a, b) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, b) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                let has_carry = (self.get_flag(CpuFlags::C) != 0) as i8;
+
+                self.registers.write_a(a - b + has_carry);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SBC A, C
             0x99 => {
+                let a = self.registers.read_a();
+                let c = self.registers.read_c();
 
+                if !check_carry(a, c) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, c) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                let has_carry = (self.get_flag(CpuFlags::C) != 0) as i8;
+
+                self.registers.write_a(a - c + has_carry);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SBC A, D
             0x9A => {
+                let a = self.registers.read_a();
+                let d = self.registers.read_d();
 
+                if !check_carry(a, d) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, d) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                let has_carry = (self.get_flag(CpuFlags::C) != 0) as i8;
+
+                self.registers.write_a(a - d + has_carry);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SBC A, E
             0x9B => {
+                let a = self.registers.read_a();
+                let e = self.registers.read_e();
 
+                if !check_carry(a, e) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, e) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                let has_carry = (self.get_flag(CpuFlags::C) != 0) as i8;
+
+                self.registers.write_a(a - e + has_carry);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SBC A, H
             0x9C => {
-                
+                let a = self.registers.read_a();
+                let h = self.registers.read_h();
+
+                if !check_carry(a, h) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, h) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                let has_carry = (self.get_flag(CpuFlags::C) != 0) as i8;
+
+                self.registers.write_a(a - h + has_carry);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SBC A, L
             0x9D => {
+                let a = self.registers.read_a();
+                let l = self.registers.read_l();
 
+                if !check_carry(a, l) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, l) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                let has_carry = (self.get_flag(CpuFlags::C) != 0) as i8;
+
+                self.registers.write_a(a - l + has_carry);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SBC A, (HL)
             0x9E => {
+                let a = self.registers.read_a();
 
+                let hl = self.registers.read_hl();
+                let data = self.mmu.read_byte(hl);
+
+                if !check_carry(a, data) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, data) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                let has_carry = (self.get_flag(CpuFlags::C) != 0) as i8;
+
+                self.registers.write_a(a - data + has_carry);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // SBC A, A
             0x9F => {
+                let a = self.registers.read_a();
 
+                if !check_carry(a, a) {
+                    self.set_flag(CpuFlags::C);
+                }
+
+                if !check_half_carry(a, a) {
+                    self.set_flag(CpuFlags::H);
+                }
+
+                self.set_flag(CpuFlags::N);
+
+                let has_carry = (self.get_flag(CpuFlags::C) != 0) as i8;
+
+                self.registers.write_a(a - a + has_carry);
+
+                if self.registers.read_a() == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
             }
+            // AND B
             0xA0 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_b();
 
+                self.clear_flag(CpuFlags::N);
+                self.set_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::C);
+
+                if a & b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a & b);
             }
+            // AND C
             0xA1 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_c();
 
+                self.clear_flag(CpuFlags::N);
+                self.set_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::C);
+
+                if a & b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a & b);
             }
+            // AND D
             0xA2 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_d();
 
+                self.clear_flag(CpuFlags::N);
+                self.set_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::C);
+
+                if a & b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a & b);
             }
+            // AND E
             0xA3 => {
-                
+                let a = self.registers.read_a();
+                let b = self.registers.read_e();
+
+                self.clear_flag(CpuFlags::N);
+                self.set_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::C);
+
+                if a & b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a & b);
             }
+            // AND H
             0xA4 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_h();
 
+                self.clear_flag(CpuFlags::N);
+                self.set_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::C);
+
+                if a & b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a & b);
             }
+            // AND L
             0xA5 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_l();
 
+                self.clear_flag(CpuFlags::N);
+                self.set_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::C);
+
+                if a & b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a & b);
             }
+            // AND (HL)
             0xA6 => {
+                let a = self.registers.read_a();
+                let address = self.registers.read_hl();
+                let b = self.mmu.read_byte(address);
 
+                self.clear_flag(CpuFlags::N);
+                self.set_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::C);
+
+                if a & b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a & b);
             }
+            // AND A
             0xA7 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_a();
 
+                self.clear_flag(CpuFlags::N);
+                self.set_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::C);
+
+                if a & b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a & b);
             }
+            // XOR B
             0xA8 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_b();
                 
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
+
+                if a ^ b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a ^ b);
             }
+            // XOR C
             0xA9 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_c();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
 
+                if a ^ b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a ^ b);
             }
+            // XOR D
             0xAA => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_d();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
 
+                if a ^ b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a ^ b);
             }
+            // XOR E
             0xAB => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_e();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
 
+                if a ^ b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a ^ b);
             }
+            // XOR H
             0xAC => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_h();
                 
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
+
+                if a ^ b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a ^ b);
             }
+            // XOR L
             0xAD => {
-
-            }
-            0xAE => {
-
-            }
-            0xAF => {
-
-            }
-            0xB0 => {
-
-            }
-            0xB1 => {
-
-            }
-            0xB2 => {
-
-            }
-            0xB3 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_l();
                 
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
+
+                if a ^ b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a ^ b);
             }
+            // XOR (HL)
+            0xAE => {
+                let a = self.registers.read_a();
+                let address = self.registers.read_hl();
+                let b = self.mmu.read_byte(address);
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
+
+                if a ^ b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a ^ b);
+            }
+            // XOR A
+            0xAF => {
+                let a = self.registers.read_a();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
+
+                if a ^ a == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a ^ a);
+            }
+            // OR B
+            0xB0 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_b();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
+
+                if a | b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a | b);
+            }
+            // OR C
+            0xB1 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_c();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
+
+                if a | b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a | b);
+            }
+            // OR D
+            0xB2 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_d();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
+
+                if a | b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a | b);
+            }
+            // OR E
+            0xB3 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_e();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
+
+                if a | b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a | b);
+            }
+            // OR H
             0xB4 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_h();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
 
+                if a | b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a | b);
             }
+            // OR L
             0xB5 => {
+                let a = self.registers.read_a();
+                let b = self.registers.read_l();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
 
+                if a | b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a | b);
             }
+            // OR (HL)
             0xB6 => {
+                let a = self.registers.read_a();
+                let address = self.registers.read_hl();
+                let b = self.mmu.read_byte(address);
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
 
+                if a | b == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a | b);
             }
+            // OR A
             0xB7 => {
+                let a = self.registers.read_a();
+                
+                self.clear_flag(CpuFlags::C);
+                self.clear_flag(CpuFlags::H);
+                self.clear_flag(CpuFlags::N);
 
+                if a | a == 0 {
+                    self.set_flag(CpuFlags::Z);
+                }
+
+                self.registers.write_a(a | a);
             }
+            // CP B
             0xB8 => {
                 
             }
