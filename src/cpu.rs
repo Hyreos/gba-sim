@@ -150,11 +150,16 @@ pub enum CpuFlags {
 }
 
 fn check_half_carry<T>(a: T, b: T) -> bool where T: PrimInt {
-    return ((a & num::cast(0xF).unwrap()) + (b & num::cast(0xF).unwrap()) & num::cast(0x10).unwrap()) == num::cast(0x10).unwrap();
+    let nibble_mask = T::from(0xF).unwrap();
+    let half_mask = T::from(0x10).unwrap();
+    return ((a & nibble_mask) + (b & nibble_mask) & half_mask) == half_mask;
 }
 
 fn check_carry<T>(a: T, b: T) -> bool where T: PrimInt {
-    return ((a & num::cast(0xFF).unwrap()) + (b & num::cast(0xFF).unwrap()) & num::cast(0x100).unwrap()) == num::cast(0x100).unwrap();
+    let byte_mask = T::from(0xFF).unwrap();
+    let carry_mask = T::from(0x100).unwrap();
+    
+    return (((a & byte_mask) + (b & byte_mask)) & carry_mask) == carry_mask;
 }
 
 pub struct Cpu {
@@ -401,7 +406,7 @@ impl Cpu<> {
                     self.set_flag(CpuFlags::H);
                 }
 
-                if (d + 1 == 0) {
+                if d + 1 == 0 {
                     self.set_flag(CpuFlags::Z);
                 }
 
