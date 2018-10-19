@@ -232,7 +232,6 @@ impl Cpu<> {
                 let data = self.mmu.read_byte(self.registers.pc.read() as u16 + 1);
                 self.registers.bc.write_hi(data);
             }
-
             0x0F => {
                 self.untoggle_flag(CpuFlags::Z);
                 self.untoggle_flag(CpuFlags::N);
